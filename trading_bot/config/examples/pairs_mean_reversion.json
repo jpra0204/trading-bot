@@ -1,0 +1,22 @@
+{
+  "pairs": [
+    {"symbol_a": "AAPL", "symbol_b": "MSFT", "hedge_ratio": 1.0},
+    {"symbol_a": "XOM", "symbol_b": "CVX"}
+  ],
+  "strategy": {
+    "name": "pairs_mean_reversion",
+    "lookback": 30,
+    "entry_zscore": 2.0,
+    "exit_zscore": 0.5,
+    "spread_lag": 1
+  },
+  "risk": {
+    "max_position_per_leg": 100,
+    "max_notional": 100000,
+    "max_pairs": 2
+  },
+  "run": {
+    "mode": "backtest",
+    "data_source": "csv"
+  }
+}
