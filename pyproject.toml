@@ -18,5 +18,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+# Use the locally available build tooling to avoid network fetches during
+# installation in restricted environments.
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"

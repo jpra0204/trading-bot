@@ -1,69 +1,144 @@
-"""In-memory paper broker for simulating order flow.
+"""In-memory paper broker for simple testing and dry-runs.
 
-This lightweight broker is intended for local development and unit tests.
-It keeps prices and positions in memory and immediately "fills" market orders
-at the requested symbol's last price.
+The paper broker maintains cash, positions, and orders in memory and fills
+market orders immediately at the current price sourced from either a user
+provided ``price_feed`` callable or an internally managed last-price map.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Iterable, Mapping
+from datetime import datetime, timedelta
+from typing import Callable
 
-from trading_bot.brokers.base import BrokerClient
-from trading_bot.models.types import BrokerPrices, Order, OrderRequest, Position
+from trading_bot.brokers.base import BrokerClient, BrokerError
+from trading_bot.models.types import Bar, Order, OrderType, Position, Quote, Side
 
 
-@dataclass
-class PaperBroker(BrokerClient):
-    """Simple paper broker with pluggable price snapshots."""
+class PaperBrokerClient(BrokerClient):
+    """Lightweight paper broker that fills market orders at the current price."""
 
-    prices: BrokerPrices = field(default_factory=dict)
-    positions: dict[str, Position] = field(default_factory=dict)
+    def __init__(self, starting_cash: float = 100_000, price_feed: Callable[[str], float] | None = None) -> None:
+        self.cash: float = float(starting_cash)
+        self.price_feed = price_feed
+        self._positions: dict[str, Position] = {}
+        self._orders: dict[str, Order] = {}
+        self._last_price: dict[str, float] = {}
+        self._order_seq: int = 1
 
-    def update_prices(self, prices: BrokerPrices) -> None:
-        """Replace the internal price map used for fills."""
+    # Price helpers -----------------------------------------------------
+    def set_price(self, symbol: str, price: float) -> None:
+        """Set the latest price for a symbol when no external feed is provided."""
 
-        self.prices = dict(prices)
+        self._last_price[symbol] = float(price)
 
-    def get_prices(self, symbols: Iterable[str]) -> BrokerPrices:
-        return {symbol: self.prices.get(symbol, 0.0) for symbol in symbols}
+    def _resolve_price(self, symbol: str) -> float:
+        if self.price_feed is not None:
+            price = self.price_feed(symbol)
+            if price is None:
+                raise BrokerError(f"Price feed did not return a price for {symbol}")
+            return float(price)
 
-    def place_order(self, order: OrderRequest) -> Order:
-        price = self.prices.get(order.symbol)
-        if price is None:
-            raise ValueError(f"Price for {order.symbol} not available")
+        if symbol not in self._last_price:
+            raise BrokerError(f"No price available for symbol {symbol}")
+        return self._last_price[symbol]
 
-        position = self.positions.get(order.symbol)
-        signed_qty = order.quantity if order.side.value == "BUY" else -order.quantity
-        if position:
-            total_qty = position.quantity + signed_qty
-            new_avg = (
-                (position.quantity * position.avg_price) + (signed_qty * price)
-            ) / total_qty if total_qty else position.avg_price
-            self.positions[order.symbol] = Position(
-                symbol=order.symbol,
-                quantity=total_qty,
-                avg_price=new_avg,
-            )
-        else:
-            self.positions[order.symbol] = Position(
-                symbol=order.symbol,
-                quantity=signed_qty,
-                avg_price=price,
-            )
+    # BrokerClient interface -------------------------------------------
+    def get_quote(self, symbol: str) -> Quote:
+        price = self._resolve_price(symbol)
+        return Quote(symbol=symbol, bid=None, ask=None, last=price, timestamp=datetime.utcnow())
 
-        return Order(
-            id=f"paper-{order.symbol}-{datetime.utcnow().timestamp()}",
-            request=order,
-            status="filled",
-            filled_quantity=order.quantity,
+    def get_latest_bar(self, symbol: str, interval: str = "1min") -> Bar:  # noqa: ARG002
+        price = self._resolve_price(symbol)
+        return Bar(
+            symbol=symbol,
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+            volume=0.0,
+            timestamp=datetime.utcnow(),
         )
 
-    def cancel_order(self, order_id: str) -> None:  # noqa: ARG002
-        # Nothing to cancel in the immediate-fill paper broker.
-        return None
+    def get_historical_bars(self, symbol: str, limit: int, interval: str = "1min") -> list[Bar]:  # noqa: ARG002
+        price = self._resolve_price(symbol)
+        now = datetime.utcnow()
+        return [
+            Bar(
+                symbol=symbol,
+                open=price,
+                high=price,
+                low=price,
+                close=price,
+                volume=0.0,
+                timestamp=now - timedelta(minutes=i),
+            )
+            for i in range(limit)
+        ]
 
-    def get_positions(self) -> Mapping[str, Position]:
-        return dict(self.positions)
+    def get_positions(self) -> dict[str, Position]:
+        return dict(self._positions)
+
+    def get_position(self, symbol: str) -> Position | None:
+        return self._positions.get(symbol)
+
+    def place_order(
+        self,
+        symbol: str,
+        side: Side,
+        quantity: float,
+        order_type: OrderType = "market",
+        limit_price: float | None = None,
+    ) -> Order:
+        if order_type == "limit":
+            raise NotImplementedError("Limit orders are not yet supported in PaperBrokerClient")
+
+        price = self._resolve_price(symbol)
+        timestamp = datetime.utcnow()
+        order_id = f"paper-{self._order_seq}"
+        self._order_seq += 1
+
+        signed_qty = quantity if side == "buy" else -quantity
+        existing = self._positions.get(symbol)
+        prev_qty = existing.quantity if existing else 0.0
+        prev_avg = existing.avg_price if existing else 0.0
+        new_qty = prev_qty + signed_qty
+
+        if new_qty != 0:
+            new_avg = ((prev_qty * prev_avg) + (signed_qty * price)) / new_qty
+        else:
+            new_avg = price
+
+        self._positions[symbol] = Position(symbol=symbol, quantity=new_qty, avg_price=new_avg)
+
+        cash_delta = -quantity * price if side == "buy" else quantity * price
+        self.cash += cash_delta
+
+        order = Order(
+            id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            price=price,
+            timestamp=timestamp,
+            status="filled",
+        )
+        self._orders[order_id] = order
+        return order
+
+    def cancel_order(self, order_id: str) -> None:
+        order = self._orders.get(order_id)
+        if order is None:
+            raise BrokerError(f"Order {order_id} not found")
+        if order.status == "filled":
+            raise BrokerError("Cannot cancel a filled order")
+
+        self._orders[order_id] = order.model_copy(update={"status": "canceled"})
+
+    def get_open_orders(self) -> list[Order]:
+        return [order for order in self._orders.values() if order.status not in {"filled", "canceled"}]
+
+    def get_account_balance(self) -> float:
+        """Return current cash balance (equity calculation can be added later)."""
+
+        return self.cash
