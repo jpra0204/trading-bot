@@ -1,41 +1,43 @@
-"""Math helpers for spread calculations and z-scores."""
+"""Math helpers for rolling statistics and z-score calculations."""
 
 from __future__ import annotations
 
-from collections import deque
-from typing import Deque, Iterable
+def rolling_mean(values: list[float]) -> float:
+    """Return the arithmetic mean of ``values``.
 
-from trading_bot.config.schemas import PairConfig
-from trading_bot.models.types import BrokerPrices
-
-
-def pair_spread(prices: BrokerPrices, pair: PairConfig) -> float:
-    """Compute the simple price spread for a pair."""
-
-    price_a = prices.get(pair.symbol_a)
-    price_b = prices.get(pair.symbol_b)
-    if price_a is None or price_b is None:
-        raise ValueError(f"Missing prices for pair {pair.symbol_a}/{pair.symbol_b}")
-    hedge_ratio = pair.hedge_ratio or 1.0
-    return price_a - hedge_ratio * price_b
-
-
-def zscore(latest_value: float, history: Iterable[float] | None = None, lookback: int = 30) -> float | None:
-    """Calculate a basic z-score given a history of spread values.
-
-    The helper is intentionally minimal for the scaffold: when there is no
-    history, the function returns ``None`` so callers can skip trading until
-    sufficient context is available.
+    Raises ``ValueError`` when ``values`` is empty to avoid silently returning
+    misleading results.
     """
 
-    values: Deque[float] = deque(history or [], maxlen=lookback)
-    values.append(latest_value)
-    if len(values) < lookback:
-        return None
+    if not values:
+        raise ValueError("rolling_mean requires at least one value")
+    return sum(values) / len(values)
 
-    mean = sum(values) / len(values)
-    variance = sum((v - mean) ** 2 for v in values) / len(values)
-    std = variance ** 0.5
+
+def rolling_std(values: list[float]) -> float:
+    """Return the population standard deviation of ``values``.
+
+    Raises ``ValueError`` when ``values`` is empty. If variance is zero the
+    function returns ``0.0`` to allow downstream callers to handle flat series
+    gracefully.
+    """
+
+    if not values:
+        raise ValueError("rolling_std requires at least one value")
+
+    mean = rolling_mean(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return variance ** 0.5
+
+
+def zscore(value: float, mean: float, std: float) -> float:
+    """Compute the z-score of ``value`` given ``mean`` and ``std``.
+
+    When ``std`` is zero (no variability), the function returns ``0.0`` to
+    indicate a neutral z-score rather than raising.
+    """
+
     if std == 0:
         return 0.0
-    return (latest_value - mean) / std
+    return (value - mean) / std
+
