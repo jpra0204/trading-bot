@@ -1,0 +1,17 @@
+pairs:
+  - name: "AAPL_MSFT"
+    symbol_long: "AAPL"
+    symbol_short: "MSFT"
+    lookback_bars: 60
+    entry_zscore: 2.0
+    exit_zscore: 0.5
+    max_holding_bars: 120
+    notional_per_leg: 10000
+  - name: "KO_PEP"
+    symbol_long: "KO"
+    symbol_short: "PEP"
+    lookback_bars: 60
+    entry_zscore: 2.0
+    exit_zscore: 0.5
+    max_holding_bars: 120
+    notional_per_leg: 8000
