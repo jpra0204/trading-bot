@@ -7,11 +7,7 @@ from collections.abc import Mapping
 
 from trading_bot.config.schemas import PairConfig, RiskConfig
 from trading_bot.data.sources import load_bars_for_symbols_from_csv
-
-try:  # pragma: no cover - import depends on available backtest engine
-    from trading_bot.execution.backtest import run_pairs_backtest
-except ImportError:
-    run_pairs_backtest = None
+from trading_bot.execution.backtest import run_pairs_backtest
 
 
 def _get_field(result: object, name: str) -> float | int | object:
@@ -35,9 +31,6 @@ def main() -> None:
     parser.add_argument("--max-holding-bars", type=int, default=200, help="Maximum bars to hold a position")
 
     args = parser.parse_args()
-
-    if run_pairs_backtest is None:
-        raise RuntimeError("Backtest engine is not available")
 
     bars_by_symbol = load_bars_for_symbols_from_csv({
         args.long_symbol: args.long_csv,
