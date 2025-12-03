@@ -1,0 +1,24 @@
+mode: "paper"
+poll_interval_seconds: 60
+pairs:
+  - name: "AAPL_MSFT"
+    symbol_long: "AAPL"
+    symbol_short: "MSFT"
+    lookback_bars: 60
+    entry_zscore: 2.0
+    exit_zscore: 0.5
+    max_holding_bars: 120
+    notional_per_leg: 10000
+  - name: "KO_PEP"
+    symbol_long: "KO"
+    symbol_short: "PEP"
+    lookback_bars: 60
+    entry_zscore: 2.0
+    exit_zscore: 0.5
+    max_holding_bars: 120
+    notional_per_leg: 8000
+risk:
+  max_total_notional: 50000
+  max_pairs_open: 2
+  max_daily_loss: 2000
+  max_position_per_symbol: 15000
