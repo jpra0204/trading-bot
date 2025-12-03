@@ -114,7 +114,7 @@ def test_execute_enters_and_exits_positions() -> None:
     broker.set_price("BBB", 50.0)
 
     def stub(symbol: str, limit: int, interval: str = "1min") -> list[Bar]:  # noqa: ARG001
-        values = {"AAA": [11.0, 12.0, 13.0], "BBB": [10.0, 10.0, 10.0]}
+        values = {"AAA": [12.0, 11.0, 9.0], "BBB": [10.0, 10.0, 10.0]}
         return _bars(values[symbol], symbol)
 
     broker.get_historical_bars = stub  # type: ignore[assignment]
@@ -123,8 +123,13 @@ def test_execute_enters_and_exits_positions() -> None:
 
     pos_long = broker.get_position("AAA")
     pos_short = broker.get_position("BBB")
-    assert pos_long is not None and pos_long.quantity > 0
-    assert pos_short is not None and pos_short.quantity < 0
+    assert pos_long is not None and pos_short is not None
+    if signal == Signal.ENTER_LONG_SHORT:
+        assert pos_long.quantity > 0
+        assert pos_short.quantity < 0
+    elif signal == Signal.ENTER_SHORT_LONG:
+        assert pos_long.quantity < 0
+        assert pos_short.quantity > 0
     assert state.is_open is True
 
     exit_signal = Signal.EXIT
